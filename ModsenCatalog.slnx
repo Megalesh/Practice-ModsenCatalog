@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ModsenCatalog.BusinessLogic/ModsenCatalog.BusinessLogic.csproj" />
+    <Project Path="src/ModsenCatalog.DataAccess/ModsenCatalog.DataAccess.csproj" />
+    <Project Path="src/ModsenCatalog.Presentation/ModsenCatalog.Presentation.csproj" />
+  </Folder>
+</Solution>
