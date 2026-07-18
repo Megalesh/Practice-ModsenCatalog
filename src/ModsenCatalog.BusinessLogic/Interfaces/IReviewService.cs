@@ -13,4 +13,5 @@ public interface IReviewService
     Task<Review?> GetReviewByIdAsync(Guid id);
 
     Task<(IEnumerable<Review> Items, int TotalCount)> GetReviewsByProductAsync(Guid productId, int pageNumber, int pageSize);
+    Task<IEnumerable<Review>> GetReviewsByUserIdAsync(Guid userId);
 }

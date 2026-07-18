@@ -104,4 +104,9 @@ public class ReviewService : IReviewService
         var avgRating = await _reviewRepository.GetAverageRatingForProductAsync(productId);
         await _productRepository.UpdateAverageRatingAsync(productId, avgRating ?? 0.0);
     }
+
+    public async Task<IEnumerable<Review>> GetReviewsByUserIdAsync(Guid userId)
+    {
+        return await _reviewRepository.GetByUserIdAsync(userId);
+    }
 }

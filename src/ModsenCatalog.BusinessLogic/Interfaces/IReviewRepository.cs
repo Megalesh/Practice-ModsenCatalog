@@ -9,4 +9,5 @@ public interface IReviewRepository : IRepository<Review>
     Task<IEnumerable<Review>> GetByProductIdAsync(Guid productId, int pageNumber, int pageSize);
     Task<int> GetCountByProductIdAsync(Guid productId);
     Task<double?> GetAverageRatingForProductAsync(Guid productId);
+    Task<IEnumerable<Review>> GetByUserIdAsync(Guid userId);
 }

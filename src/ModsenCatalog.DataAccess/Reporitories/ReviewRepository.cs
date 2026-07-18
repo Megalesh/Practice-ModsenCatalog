@@ -112,4 +112,11 @@ public class ReviewRepository : IReviewRepository
         await using var connection = _dbFactory.CreateConnection();
         return await connection.ExecuteScalarAsync<double?>(sql, new { ProductId = productId });
     }
+
+    public async Task<IEnumerable<Review>> GetByUserIdAsync(Guid userId)
+    {
+        const string sql = "SELECT * FROM Reviews WHERE UserId = @UserId ORDER BY CreatedAt DESC";
+        await using var connection = _dbFactory.CreateConnection();
+        return await connection.QueryAsync<Review>(sql, new { UserId = userId });
+    }
 }
