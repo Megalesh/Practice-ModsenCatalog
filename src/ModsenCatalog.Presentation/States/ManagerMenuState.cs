@@ -1,9 +1,9 @@
-﻿namespace ModsenCatalog.Presentation.States;
-
-using ModsenCatalog.BusinessLogic.DTOs;
+﻿using ModsenCatalog.BusinessLogic.DTOs;
 using ModsenCatalog.BusinessLogic.Entities;
 using ModsenCatalog.BusinessLogic.Interfaces;
 using ModsenCatalog.Presentation.UI;
+
+namespace ModsenCatalog.Presentation.States;
 
 public class ManagerMenuState : IMenuState
 {
@@ -14,6 +14,8 @@ public class ManagerMenuState : IMenuState
     private IProductService ProductService => _context.GetService<IProductService>();
     private IReviewService ReviewService => _context.GetService<IReviewService>();
 
+    private const int DefaultPageSize = 10;
+
     public ManagerMenuState(MenuContext context)
     {
         _context = context;
@@ -22,6 +24,7 @@ public class ManagerMenuState : IMenuState
 
     public void DisplayMenu()
     {
+        Console.Clear();
         _console.WriteTitle($"МЕНЮ МЕНЕДЖЕРА [{_context.CurrentUser?.Username}]");
         Console.WriteLine("1. Управление категориями");
         Console.WriteLine("2. Управление товарами");
@@ -42,6 +45,7 @@ public class ManagerMenuState : IMenuState
                 return new MainMenuState(_context);
             default:
                 _console.WriteError("Неверный выбор.");
+                _console.WaitForEnter();
                 break;
         }
         return null;
@@ -69,31 +73,25 @@ public class ManagerMenuState : IMenuState
                 case "3": EditCategory(); break;
                 case "4": DeleteCategory(); break;
                 case "0": back = true; break;
-                default: _console.WriteError("Неверный ввод."); Thread.Sleep(1000); break;
+                default: _console.WriteError("Неверный ввод."); _console.WaitForEnter(); break;
             }
         }
     }
 
     private void ListCategories()
     {
-        Console.Clear();
-        _console.WriteTitle("СПИСОК КАТЕГОРИЙ");
         var cats = CategoryService.GetAllCategoriesAsync().GetAwaiter().GetResult();
 
-        if (!cats.Any())
-        {
-            _console.WriteInfo("Категорий нет.");
-        }
-        else
-        {
-            foreach (var c in cats)
+        _console.ShowPagedListAndSelect(
+            cats,
+            "СПИСОК КАТЕГОРИЙ",
+            (index, cat) =>
             {
-                Console.WriteLine($"ID: {c.Id} | Name: {c.Name}");
-                Console.WriteLine($"   Desc: {c.Description}");
-                Console.WriteLine(new string('-', 50));
-            }
-        }
-        _console.WaitForEnter();
+                Console.WriteLine($"{index}. {cat.Name}");
+                Console.WriteLine($"   Описание: {cat.Description}");
+            },
+            pageSize: DefaultPageSize
+        );
     }
 
     private void CreateCategory()
@@ -123,28 +121,25 @@ public class ManagerMenuState : IMenuState
             _console.WriteTitle("РЕДАКТИРОВАНИЕ КАТЕГОРИИ");
 
             var cats = CategoryService.GetAllCategoriesAsync().GetAwaiter().GetResult();
-            Console.WriteLine("Доступные категории:");
-            foreach (var c in cats) Console.WriteLine($"ID: {c.Id} | Name: {c.Name}");
 
-            Guid id = Guid.Parse(_console.ReadNonEmptyLine("\nВведите ID категории: "));
-            var cat = CategoryService.GetCategoryByIdAsync(id).GetAwaiter().GetResult();
+            var catToEdit = _console.ShowPagedListAndSelect(
+                cats,
+                "ВЫБЕРИТЕ КАТЕГОРИЮ ДЛЯ РЕДАКТИРОВАНИЯ",
+                (index, cat) => Console.WriteLine($"{index}. {cat.Name}"),
+                pageSize: DefaultPageSize
+            );
 
-            if (cat == null)
-            {
-                _console.WriteError("Категория не найдена.");
-                _console.WaitForEnter();
-                return;
-            }
+            if (catToEdit == null) return;
 
-            Console.WriteLine($"Текущее имя: '{cat.Name}'. Оставьте пустым, чтобы не менять.");
+            Console.WriteLine($"Текущее имя: '{catToEdit.Name}'. Оставьте пустым, чтобы не менять.");
             string newName = Console.ReadLine()?.Trim();
-            if (!string.IsNullOrEmpty(newName)) cat.Name = newName;
+            if (!string.IsNullOrEmpty(newName)) catToEdit.Name = newName;
 
-            Console.WriteLine($"Текущее описание: '{cat.Description}'. Оставьте пустым, чтобы не менять.");
+            Console.WriteLine($"Текущее описание: '{catToEdit.Description}'. Оставьте пустым, чтобы не менять.");
             string newDesc = Console.ReadLine()?.Trim();
-            if (!string.IsNullOrEmpty(newDesc)) cat.Description = newDesc;
+            if (!string.IsNullOrEmpty(newDesc)) catToEdit.Description = newDesc;
 
-            CategoryService.UpdateCategoryAsync(cat).GetAwaiter().GetResult();
+            CategoryService.UpdateCategoryAsync(catToEdit).GetAwaiter().GetResult();
             _console.WriteSuccess("Категория обновлена!");
         }
         catch (Exception ex)
@@ -162,24 +157,21 @@ public class ManagerMenuState : IMenuState
             _console.WriteTitle("УДАЛЕНИЕ КАТЕГОРИИ");
 
             var cats = CategoryService.GetAllCategoriesAsync().GetAwaiter().GetResult();
-            var deletableCats = cats.Where(c => !c.Name.Equals("Архив", StringComparison.OrdinalIgnoreCase)).ToList();
+            var deletableCats = cats.Where(c => !c.Name.Equals("Архив", StringComparison.OrdinalIgnoreCase));
 
-            if (!deletableCats.Any())
-            {
-                _console.WriteError("Нет категорий для удаления.");
-                _console.WaitForEnter();
-                return;
-            }
+            var catToDelete = _console.ShowPagedListAndSelect(
+                deletableCats,
+                "ВЫБЕРИТЕ КАТЕГОРИЮ ДЛЯ УДАЛЕНИЯ",
+                (index, cat) => Console.WriteLine($"{index}. {cat.Name}"),
+                pageSize: DefaultPageSize
+            );
 
-            Console.WriteLine("Доступные категории для удаления:");
-            foreach (var c in deletableCats) Console.WriteLine($"ID: {c.Id} | Name: {c.Name}");
-
-            Guid id = Guid.Parse(_console.ReadNonEmptyLine("\nВведите ID категории для удаления: "));
+            if (catToDelete == null) return;
 
             Console.Write("Внимание! Товары будут перенесены в 'Архив'. Продолжить? (y/n): ");
             if (Console.ReadLine()?.Trim().ToLower() != "y") return;
 
-            CategoryService.DeleteCategoryAsync(id).GetAwaiter().GetResult();
+            CategoryService.DeleteCategoryAsync(catToDelete.Id).GetAwaiter().GetResult();
             _console.WriteSuccess("Категория удалена. Товары перенесены в Архив.");
         }
         catch (Exception ex)
@@ -196,7 +188,7 @@ public class ManagerMenuState : IMenuState
         {
             Console.Clear();
             _console.WriteTitle("УПРАВЛЕНИЕ ТОВАРАМИ");
-            Console.WriteLine("1. Список товаров (Пагинация)");
+            Console.WriteLine("1. Список товаров");
             Console.WriteLine("2. Создать товар");
             Console.WriteLine("3. Редактировать товар");
             Console.WriteLine("4. Удалить товар");
@@ -206,59 +198,26 @@ public class ManagerMenuState : IMenuState
             string choice = Console.ReadLine()?.Trim() ?? "";
             switch (choice)
             {
-                case "1": ListProductsWithPagination(); break;
+                case "1": ListProducts(); break;
                 case "2": CreateProduct(); break;
                 case "3": EditProduct(); break;
                 case "4": DeleteProduct(); break;
                 case "0": back = true; break;
-                default: _console.WriteError("Неверный ввод."); Thread.Sleep(1000); break;
+                default: _console.WriteError("Неверный ввод."); _console.WaitForEnter(); break;
             }
         }
     }
 
-    private void ListProductsWithPagination()
+    private void ListProducts()
     {
-        int page = 1;
-        int pageSize = 5;
-        bool exitList = false;
+        var result = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 100 }).GetAwaiter().GetResult();
 
-        while (!exitList)
-        {
-            Console.Clear();
-            _console.WriteTitle("СПИСОК ТОВАРОВ");
-
-            var result = ProductService.GetProductsAsync(new ProductSearchParameters
-            {
-                PageNumber = page,
-                PageSize = pageSize
-            }).GetAwaiter().GetResult();
-
-            int totalPages = (int)Math.Ceiling(result.TotalCount / (double)pageSize);
-
-            if (!result.Items.Any())
-            {
-                _console.WriteInfo("Товаров нет.");
-            }
-            else
-            {
-                foreach (var p in result.Items)
-                {
-                    Console.WriteLine($"ID: {p.Id}");
-                    Console.WriteLine($"Name: {p.Name}");
-                    Console.WriteLine($"Price: {p.Price:C} | Rating: {p.AverageRating:F1}");
-                    Console.WriteLine(new string('-', 30));
-                }
-            }
-
-            Console.WriteLine($"\nСтраница {page} из {Math.Max(1, totalPages)} (Всего: {result.TotalCount})");
-            Console.WriteLine("[N]ext, [P]rev, [Q]uit to menu");
-            Console.Write("Действие: ");
-
-            string cmd = Console.ReadLine()?.Trim().ToUpper() ?? "";
-            if (cmd == "N" && page < totalPages) page++;
-            else if (cmd == "P" && page > 1) page--;
-            else if (cmd == "Q") exitList = true;
-        }
+        _console.ShowPagedListAndSelect(
+            result.Items,
+            "СПИСОК ТОВАРОВ",
+            (index, prod) => Console.WriteLine($"{index}. {prod.Name} | Цена: {prod.Price:C} | Рейтинг: {prod.AverageRating:F1}"),
+            pageSize: DefaultPageSize
+        );
     }
 
     private void CreateProduct()
@@ -273,12 +232,16 @@ public class ManagerMenuState : IMenuState
             decimal price = _console.ReadDecimal("Цена: ");
 
             var cats = CategoryService.GetAllCategoriesAsync().GetAwaiter().GetResult();
-            Console.WriteLine("\nДоступные категории:");
-            foreach (var c in cats) Console.WriteLine($"ID: {c.Id} | Name: {c.Name}");
+            var selectedCat = _console.ShowPagedListAndSelect(
+                cats,
+                "ВЫБЕРИТЕ КАТЕГОРИЮ ДЛЯ ТОВАРА",
+                (index, cat) => Console.WriteLine($"{index}. {cat.Name}"),
+                pageSize: DefaultPageSize
+            );
 
-            Guid catId = Guid.Parse(_console.ReadNonEmptyLine("\nВведите ID категории: "));
+            if (selectedCat == null) return;
 
-            ProductService.CreateProductAsync(name, desc, price, catId).GetAwaiter().GetResult();
+            ProductService.CreateProductAsync(name, desc, price, selectedCat.Id).GetAwaiter().GetResult();
             _console.WriteSuccess("Товар создан!");
         }
         catch (Exception ex)
@@ -295,31 +258,32 @@ public class ManagerMenuState : IMenuState
             Console.Clear();
             _console.WriteTitle("РЕДАКТИРОВАНИЕ ТОВАРА");
 
-            Guid id = Guid.Parse(_console.ReadNonEmptyLine("Введите ID товара для редактирования: "));
-            var prod = ProductService.GetProductByIdAsync(id).GetAwaiter().GetResult();
+            var result = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 100 }).GetAwaiter().GetResult();
 
-            if (prod == null)
-            {
-                _console.WriteError("Товар не найден.");
-                _console.WaitForEnter();
-                return;
-            }
+            var prodToEdit = _console.ShowPagedListAndSelect(
+                result.Items,
+                "ВЫБЕРИТЕ ТОВАР ДЛЯ РЕДАКТИРОВАНИЯ",
+                (index, prod) => Console.WriteLine($"{index}. {prod.Name} | Цена: {prod.Price:C}"),
+                pageSize: DefaultPageSize
+            );
 
-            Console.WriteLine($"Текущая цена: {prod.Price:C}. Новая цена (Enter для пропуска): ");
+            if (prodToEdit == null) return;
+
+            Console.WriteLine($"Текущая цена: {prodToEdit.Price:C}. Новая цена (Enter для пропуска): ");
             string priceInput = Console.ReadLine()?.Trim();
             if (!string.IsNullOrEmpty(priceInput))
             {
-                prod.Price = decimal.Parse(priceInput, System.Globalization.CultureInfo.InvariantCulture);
+                prodToEdit.Price = decimal.Parse(priceInput, System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            Console.WriteLine($"Текущее название: {prod.Name}. Новое название (Enter для пропуска): ");
+            Console.WriteLine($"Текущее название: {prodToEdit.Name}. Новое название (Enter для пропуска): ");
             string nameInput = Console.ReadLine()?.Trim();
             if (!string.IsNullOrEmpty(nameInput))
             {
-                prod.Name = nameInput;
+                prodToEdit.Name = nameInput;
             }
 
-            ProductService.UpdateProductAsync(prod).GetAwaiter().GetResult();
+            ProductService.UpdateProductAsync(prodToEdit).GetAwaiter().GetResult();
             _console.WriteSuccess("Товар обновлен!");
         }
         catch (Exception ex)
@@ -336,12 +300,21 @@ public class ManagerMenuState : IMenuState
             Console.Clear();
             _console.WriteTitle("УДАЛЕНИЕ ТОВАРА");
 
-            Guid id = Guid.Parse(_console.ReadNonEmptyLine("Введите ID товара для удаления: "));
+            var result = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 100 }).GetAwaiter().GetResult();
+
+            var prodToDelete = _console.ShowPagedListAndSelect(
+                result.Items,
+                "ВЫБЕРИТЕ ТОВАР ДЛЯ УДАЛЕНИЯ",
+                (index, prod) => Console.WriteLine($"{index}. {prod.Name} | Цена: {prod.Price:C}"),
+                pageSize: DefaultPageSize
+            );
+
+            if (prodToDelete == null) return;
 
             Console.Write("Вы уверены? Это действие необратимо. (y/n): ");
             if (Console.ReadLine()?.Trim().ToLower() != "y") return;
 
-            ProductService.DeleteProductAsync(id).GetAwaiter().GetResult();
+            ProductService.DeleteProductAsync(prodToDelete.Id).GetAwaiter().GetResult();
             _console.WriteSuccess("Товар удален.");
         }
         catch (Exception ex)
@@ -358,45 +331,45 @@ public class ManagerMenuState : IMenuState
             Console.Clear();
             _console.WriteTitle("ПРОСМОТР ОТЗЫВОВ");
 
-            Guid prodId = Guid.Parse(_console.ReadNonEmptyLine("Введите ID товара для просмотра отзывов: "));
+            var products = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 100 }).GetAwaiter().GetResult().Items;
 
-            var prod = ProductService.GetProductByIdAsync(prodId).GetAwaiter().GetResult();
-            if (prod == null)
-            {
-                _console.WriteError("Товар не найден.");
-                _console.WaitForEnter();
-                return;
-            }
+            var selectedProd = _console.ShowPagedListAndSelect(
+                products,
+                "ВЫБЕРИТЕ ТОВАР ДЛЯ ПРОСМОТРА ОТЗЫВОВ",
+                (index, p) => Console.WriteLine($"{index}. {p.Name} (Рейтинг: {p.AverageRating:F1})"),
+                pageSize: DefaultPageSize
+            );
+
+            if (selectedProd == null) return;
 
             int page = 1;
-            int pageSize = 5;
+            int reviewPageSize = 5;
             bool exitList = false;
 
             while (!exitList)
             {
                 Console.Clear();
-                _console.WriteTitle($"ОТЗЫВЫ НА ТОВАР: {prod.Name}");
+                _console.WriteTitle($"ОТЗЫВЫ НА: {selectedProd.Name}");
 
-                var result = ReviewService.GetReviewsByProductAsync(prodId, page, pageSize).GetAwaiter().GetResult();
-                int totalPages = (int)Math.Ceiling(result.TotalCount / (double)pageSize);
+                var reviewResult = ReviewService.GetReviewsByProductAsync(selectedProd.Id, page, reviewPageSize).GetAwaiter().GetResult();
+                int totalPages = (int)Math.Ceiling(reviewResult.TotalCount / (double)reviewPageSize);
 
-                if (!result.Items.Any())
+                if (!reviewResult.Items.Any())
                 {
                     _console.WriteInfo("Отзывов пока нет.");
                 }
                 else
                 {
-                    foreach (var r in result.Items)
+                    foreach (var r in reviewResult.Items)
                     {
-                        Console.WriteLine($"[{r.Rating}/5] Пользователь ID: {r.UserId}");
-                        Console.WriteLine($"Дата: {r.CreatedAt:dd.MM.yyyy}");
-                        Console.WriteLine($"Комментарий: {r.Comment}");
+                        Console.WriteLine($"[{r.Rating}/5] Дата: {r.CreatedAt:dd.MM.yyyy}");
+                        Console.WriteLine($"   {r.Comment}");
                         Console.WriteLine(new string('-', 40));
                     }
                 }
 
                 Console.WriteLine($"\nСтраница {page} из {Math.Max(1, totalPages)}");
-                Console.WriteLine("[N]ext, [P]rev, [Q]uit to menu");
+                Console.WriteLine("[N]ext | [P]rev | [Q]uit to menu");
                 Console.Write("Действие: ");
 
                 string cmd = Console.ReadLine()?.Trim().ToUpper() ?? "";

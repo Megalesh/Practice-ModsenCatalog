@@ -9,7 +9,7 @@ public class CategoryService : ICategoryService
     private readonly ICategoryRepository categoryRepository;
     private readonly IEventPublisher eventPublisher;
 
-    private const string ArchiveCategoryName = "Архив";
+    private const string ArchiveCategoryName = "Archive";
 
     public CategoryService(
         ICategoryRepository CategoryRepository,
@@ -87,7 +87,7 @@ public class CategoryService : ICategoryService
             archiveCategory = new Category
             {
                 Name = ArchiveCategoryName,
-                Description = "Автоматически созданная категория для удаленных товаров"
+                Description = "Category for deleted products"
             };
             await categoryRepository.AddAsync(archiveCategory);
         }

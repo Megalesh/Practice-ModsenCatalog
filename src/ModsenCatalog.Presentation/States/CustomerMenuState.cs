@@ -14,6 +14,8 @@ public class CustomerMenuState : IMenuState
     private ICategoryService CategoryService => _context.GetService<ICategoryService>();
     private IReviewService ReviewService => _context.GetService<IReviewService>();
 
+    private const int DefaultPageSize = 5;
+
     public CustomerMenuState(MenuContext context)
     {
         _context = context;
@@ -22,11 +24,12 @@ public class CustomerMenuState : IMenuState
 
     public void DisplayMenu()
     {
+        Console.Clear();
         _console.WriteTitle($"КАТАЛОГ ТОВАРОВ [{_context.CurrentUser?.Username}]");
-        Console.WriteLine("1. Все товары (Пагинация)");
+        Console.WriteLine("1. Все товары");
         Console.WriteLine("2. Поиск товара по названию");
         Console.WriteLine("3. Фильтр по категории");
-        Console.WriteLine("4. Мои отзывы (Оставить / Удалить)");
+        Console.WriteLine("4. Мои отзывы");
         Console.WriteLine("0. Выход из системы");
         Console.Write("Выберите действие: ");
     }
@@ -44,6 +47,7 @@ public class CustomerMenuState : IMenuState
                 return new MainMenuState(_context);
             default:
                 _console.WriteError("Неверный выбор.");
+                _console.WaitForEnter();
                 break;
         }
         return null;
@@ -51,47 +55,18 @@ public class CustomerMenuState : IMenuState
 
     private void ListAllProducts()
     {
-        int page = 1;
-        int pageSize = 5;
-        bool exitList = false;
+        var result = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 100 }).GetAwaiter().GetResult();
 
-        while (!exitList)
-        {
-            Console.Clear();
-            _console.WriteTitle("КАТАЛОГ ТОВАРОВ");
-
-            var result = ProductService.GetProductsAsync(new ProductSearchParameters
+        _console.ShowPagedListAndSelect(
+            result.Items,
+            "КАТАЛОГ ТОВАРОВ",
+            (index, p) =>
             {
-                PageNumber = page,
-                PageSize = pageSize
-            }).GetAwaiter().GetResult();
-
-            int totalPages = (int)Math.Ceiling(result.TotalCount / (double)pageSize);
-
-            if (!result.Items.Any())
-            {
-                _console.WriteInfo("Товаров нет.");
-            }
-            else
-            {
-                foreach (var p in result.Items)
-                {
-                    Console.WriteLine($"ID: {p.Id}");
-                    Console.WriteLine($"Название: {p.Name}");
-                    Console.WriteLine($"Цена: {p.Price:C} | Рейтинг: {p.AverageRating:F1}/5.0");
-                    Console.WriteLine(new string('-', 40));
-                }
-            }
-
-            Console.WriteLine($"\nСтраница {page} из {Math.Max(1, totalPages)}");
-            Console.WriteLine("[N]ext, [P]rev, [Q]uit to menu");
-            Console.Write("Действие: ");
-
-            string cmd = Console.ReadLine()?.Trim().ToUpper() ?? "";
-            if (cmd == "N" && page < totalPages) page++;
-            else if (cmd == "P" && page > 1) page--;
-            else if (cmd == "Q") exitList = true;
-        }
+                Console.WriteLine($"{index}. {p.Name}");
+                Console.WriteLine($"   Цена: {p.Price:C} | Рейтинг: {p.AverageRating:F1}/5.0");
+            },
+            pageSize: DefaultPageSize
+        );
     }
 
     private void SearchProducts()
@@ -101,24 +76,22 @@ public class CustomerMenuState : IMenuState
         var result = ProductService.GetProductsAsync(new ProductSearchParameters
         {
             SearchTerm = term,
-            PageSize = 10
+            PageSize = 100
         }).GetAwaiter().GetResult();
-
-        Console.Clear();
-        _console.WriteTitle($"РЕЗУЛЬТАТЫ ПОИСКА: '{term}'");
 
         if (!result.Items.Any())
         {
             _console.WriteInfo("Ничего не найдено.");
+            _console.WaitForEnter();
+            return;
         }
-        else
-        {
-            foreach (var p in result.Items)
-            {
-                Console.WriteLine($"ID: {p.Id} | Name: {p.Name} | Price: {p.Price:C} | Rating: {p.AverageRating:F1}");
-            }
-        }
-        _console.WaitForEnter();
+
+        _console.ShowPagedListAndSelect(
+            result.Items,
+            $"РЕЗУЛЬТАТЫ ПОИСКА: '{term}'",
+            (index, p) => Console.WriteLine($"{index}. {p.Name} | Цена: {p.Price:C} | Рейтинг: {p.AverageRating:F1}"),
+            pageSize: DefaultPageSize
+        );
     }
 
     private void FilterByCategory()
@@ -129,35 +102,35 @@ public class CustomerMenuState : IMenuState
             _console.WriteTitle("ФИЛЬТР ПО КАТЕГОРИИ");
 
             var categories = CategoryService.GetAllCategoriesAsync().GetAwaiter().GetResult();
-            Console.WriteLine("Доступные категории:");
-            foreach (var c in categories)
-            {
-                Console.WriteLine($"- ID: {c.Id} | Name: {c.Name}");
-            }
 
-            Guid catId = Guid.Parse(_console.ReadNonEmptyLine("\nВведите ID категории: "));
+            var selectedCat = _console.ShowPagedListAndSelect(
+                categories,
+                "ВЫБЕРИТЕ КАТЕГОРИЮ",
+                (index, c) => Console.WriteLine($"{index}. {c.Name}"),
+                pageSize: DefaultPageSize
+            );
+
+            if (selectedCat == null) return;
 
             var result = ProductService.GetProductsAsync(new ProductSearchParameters
             {
-                CategoryId = catId,
-                PageSize = 10
+                CategoryId = selectedCat.Id,
+                PageSize = 100
             }).GetAwaiter().GetResult();
-
-            Console.Clear();
-            _console.WriteTitle($"ТОВАРЫ В КАТЕГОРИИ");
 
             if (!result.Items.Any())
             {
                 _console.WriteInfo("В этой категории нет товаров.");
+                _console.WaitForEnter();
+                return;
             }
-            else
-            {
-                foreach (var p in result.Items)
-                {
-                    Console.WriteLine($"ID: {p.Id} | Name: {p.Name} | Price: {p.Price:C} | Rating: {p.AverageRating:F1}");
-                }
-            }
-            _console.WaitForEnter();
+
+            _console.ShowPagedListAndSelect(
+                result.Items,
+                $"ТОВАРЫ В КАТЕГОРИИ: {selectedCat.Name}",
+                (index, p) => Console.WriteLine($"{index}. {p.Name} | Цена: {p.Price:C} | Рейтинг: {p.AverageRating:F1}"),
+                pageSize: DefaultPageSize
+            );
         }
         catch (Exception ex)
         {
@@ -186,7 +159,7 @@ public class CustomerMenuState : IMenuState
                 case "2": ViewMyReviews(); break;
                 case "3": DeleteMyReview(); break;
                 case "0": back = true; break;
-                default: _console.WriteError("Неверный ввод."); Thread.Sleep(1000); break;
+                default: _console.WriteError("Неверный ввод."); _console.WaitForEnter(); break;
             }
         }
     }
@@ -198,17 +171,23 @@ public class CustomerMenuState : IMenuState
             Console.Clear();
             _console.WriteTitle("НОВЫЙ ОТЗЫВ");
 
-            var products = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 5 }).GetAwaiter().GetResult();
-            Console.WriteLine("Последние добавленные товары (для примера ID):");
-            foreach (var p in products.Items)
-                Console.WriteLine($"ID: {p.Id} | Name: {p.Name}");
+            var products = ProductService.GetProductsAsync(new ProductSearchParameters { PageSize = 100 }).GetAwaiter().GetResult().Items;
 
-            Guid prodId = Guid.Parse(_console.ReadNonEmptyLine("\nВведите ID товара для отзыва: "));
+            var selectedProd = _console.ShowPagedListAndSelect(
+                products,
+                "ВЫБЕРИТЕ ТОВАР ДЛЯ ОТЗЫВА",
+                (index, p) => Console.WriteLine($"{index}. {p.Name} | Рейтинг: {p.AverageRating:F1}"),
+                pageSize: DefaultPageSize
+            );
 
-            var product = ProductService.GetProductByIdAsync(prodId).GetAwaiter().GetResult();
-            if (product == null)
+            if (selectedProd == null) return;
+
+            var existingReview = ReviewService.GetReviewsByUserIdAsync(_context.CurrentUser!.Id).GetAwaiter().GetResult()
+                .FirstOrDefault(r => r.ProductId == selectedProd.Id);
+
+            if (existingReview != null)
             {
-                _console.WriteError("Товар не найден.");
+                _console.WriteError("Вы уже оставили отзыв на этот товар! Вы можете изменить или удалить его в разделе 'Мои отзывы'.");
                 _console.WaitForEnter();
                 return;
             }
@@ -223,7 +202,7 @@ public class CustomerMenuState : IMenuState
 
             string comment = _console.ReadNonEmptyLine("Комментарий: ");
 
-            ReviewService.CreateReviewAsync(_context.CurrentUser!.Id, prodId, rating, comment).GetAwaiter().GetResult();
+            ReviewService.CreateReviewAsync(_context.CurrentUser!.Id, selectedProd.Id, rating, comment).GetAwaiter().GetResult();
 
             _console.WriteSuccess("Отзыв успешно добавлен!");
         }
@@ -246,27 +225,50 @@ public class CustomerMenuState : IMenuState
             if (!myReviews.Any())
             {
                 _console.WriteInfo("Вы еще не оставили ни одного отзыва.");
+                _console.WaitForEnter();
+                return;
             }
-            else
-            {
-                foreach (var r in myReviews)
-                {
-                    var prod = ProductService.GetProductByIdAsync(r.ProductId).GetAwaiter().GetResult();
-                    string prodName = prod?.Name ?? "Unknown";
 
-                    Console.WriteLine($"Товар: {prodName} (ID: {r.ProductId})");
-                    Console.WriteLine($"Ваша оценка: {r.Rating}/5");
-                    Console.WriteLine($"Комментарий: {r.Comment}");
-                    Console.WriteLine($"ID отзыва (для удаления): {r.Id}");
-                    Console.WriteLine(new string('-', 40));
-                }
+            var displayItems = new List<ReviewDisplayItem>();
+
+            foreach (var review in myReviews)
+            {
+                var product = ProductService.GetProductByIdAsync(review.ProductId).GetAwaiter().GetResult();
+                string productName = product?.Name ?? "Товар удален";
+
+                displayItems.Add(new ReviewDisplayItem(review, productName));
+            }
+
+            var selectedItem = _console.ShowPagedListAndSelect(
+                displayItems,
+                "СПИСОК ВАШИХ ОТЗЫВОВ",
+                (index, item) =>
+                {
+                    Console.WriteLine($"{index}. Товар: {item.ProductName}");
+                    Console.WriteLine($"   Оценка: {item.Review.Rating}/5 | Дата: {item.Review.CreatedAt:dd.MM.yyyy}");
+                    Console.WriteLine($"   Текст: {item.Review.Comment.Substring(0, Math.Min(40, item.Review.Comment.Length))}...");
+                },
+                pageSize: DefaultPageSize
+            );
+
+            if (selectedItem != null)
+            {
+                Console.Clear();
+                _console.WriteTitle("ПОДРОБНОСТИ ОТЗЫВА");
+
+                Console.WriteLine($"Товар: {selectedItem.ProductName}");
+                Console.WriteLine($"Ваша оценка: {selectedItem.Review.Rating}/5");
+                Console.WriteLine($"Дата: {selectedItem.Review.CreatedAt:dd.MM.yyyy HH:mm}");
+                Console.WriteLine($"Комментарий:\n{selectedItem.Review.Comment}");
+
+                _console.WaitForEnter();
             }
         }
         catch (Exception ex)
         {
             _console.WriteError(ex.Message);
+            _console.WaitForEnter();
         }
-        _console.WaitForEnter();
     }
 
     private void DeleteMyReview()
@@ -274,36 +276,48 @@ public class CustomerMenuState : IMenuState
         try
         {
             Console.Clear();
-            _console.WriteTitle("УДАЛЕНИЕ ОТЗЫВА");
+            _console.WriteTitle("УДАЛЕНИЕ МОЕГО ОТЗЫВА");
 
-            Guid reviewId = Guid.Parse(_console.ReadNonEmptyLine("Введите ID вашего отзыва для удаления: "));
+            var myReviews = ReviewService.GetReviewsByUserIdAsync(_context.CurrentUser!.Id).GetAwaiter().GetResult();
 
-            var review = ReviewService.GetReviewByIdAsync(reviewId).GetAwaiter().GetResult();
-
-            if (review == null)
+            if (!myReviews.Any())
             {
-                _console.WriteError("Отзыв не найден.");
+                _console.WriteInfo("У вас нет отзывов для удаления.");
                 _console.WaitForEnter();
                 return;
             }
 
-            if (review.UserId != _context.CurrentUser!.Id)
+            var displayItems = new List<ReviewDisplayItem>();
+
+            foreach (var review in myReviews)
             {
-                _console.WriteError("Ошибка безопасности: Вы не можете удалить чужой отзыв!");
-                _console.WaitForEnter();
-                return;
+                var product = ProductService.GetProductByIdAsync(review.ProductId).GetAwaiter().GetResult();
+                string productName = product?.Name ?? "Товар удален";
+                displayItems.Add(new ReviewDisplayItem(review, productName));
             }
+
+            var selectedItem = _console.ShowPagedListAndSelect(
+                displayItems,
+                "ВЫБЕРИТЕ ОТЗЫВ ДЛЯ УДАЛЕНИЯ",
+                (index, item) =>
+                {
+                    Console.WriteLine($"{index}. {item.ProductName} | Оценка: {item.Review.Rating}/5");
+                },
+                pageSize: DefaultPageSize
+            );
+
+            if (selectedItem == null) return;
 
             Console.Write("Вы уверены, что хотите удалить этот отзыв? (y/n): ");
             if (Console.ReadLine()?.Trim().ToLower() != "y") return;
 
-            ReviewService.DeleteReviewAsync(reviewId).GetAwaiter().GetResult();
+            ReviewService.DeleteReviewAsync(selectedItem.Review.Id).GetAwaiter().GetResult();
             _console.WriteSuccess("Отзыв удален. Рейтинг товара пересчитан.");
         }
         catch (Exception ex)
         {
             _console.WriteError(ex.Message);
+            _console.WaitForEnter();
         }
-        _console.WaitForEnter();
     }
 }
